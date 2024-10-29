@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-macos:
-    runs-on: macos-latest
+    runs-on: macos-12
     steps:
       - uses: actions/checkout@v4
 
@@ -27,6 +27,13 @@ jobs:
             local arch=$1
             local cflags="-std=c99 -Wno-multichar -O3 -arch $arch"
             
+            # Add target based on architecture
+            if [ "$arch" = "x86_64" ]; then
+              cflags="$cflags -target x86_64-apple-macos10.9"
+            else
+              cflags="$cflags -target arm64-apple-macos11"
+            fi
+
             # Create a directory for the architecture build
             mkdir -p build-$arch
             cd build-$arch
