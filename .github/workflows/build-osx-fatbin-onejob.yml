@@ -1,0 +1,175 @@
+name: macOS Universal Build with PGO, single job
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Xcode
+        run: |
+          sudo xcode-select --switch /Applications/Xcode.app
+          clang --version
+
+      - name: Build Universal Binary with PGO
+        run: |
+          # Define assembly files for profiling
+          ASM_FILES=("RGB1W.ASM" "PIOC_IIC.ASM" "PIOC_Single_Wire.ASM" "PIOC_UART.ASM")
+          
+          # Function to build and profile for specific architecture
+          build_and_profile() {
+            local arch=$1
+            local cflags="-std=c99 -Wno-multichar -O3 -arch $arch"
+            
+            # Create a directory for the architecture build
+            mkdir -p build-$arch
+            cd build-$arch
+            
+            echo "Building instrumented version for $arch..."
+            xcrun clang $cflags -fprofile-instr-generate ../asm53b.c -o asm53b.$arch.inst
+            
+            # Run with instrumentation to collect profile data
+            export LLVM_PROFILE_FILE="code-$arch-%p.profraw"
+            for file in "${ASM_FILES[@]}"; do
+              if [ -f "../profiling_materials/$file" ]; then
+                echo "Processing $file for profiling ($arch)..."
+                ./asm53b.$arch.inst "../profiling_materials/$file"
+              fi
+            done
+            
+            # Merge profile data
+            echo "Merging profile data for $arch..."
+            xcrun llvm-profdata merge -output=code.$arch.profdata code-$arch-*.profraw
+            
+            # Build optimized version
+            echo "Building optimized version for $arch..."
+            xcrun clang $cflags -fprofile-instr-use=code.$arch.profdata ../asm53b.c -o asm53b.$arch
+            
+            # Generate and verify all binaries
+            echo "Generating and verifying binaries for $arch..."
+            rm -f *.BIN *.LST # Clear any existing .BIN files
+            
+            ERROR_BIN_COUNT=0
+            for file in "${ASM_FILES[@]}"; do
+              if [ -f "../profiling_materials/$file" ]; then
+                echo "Processing $file with optimized binary..."
+                ./asm53b.$arch "../profiling_materials/$file"
+              fi
+            done
+            
+            # Create verification summary
+            {
+              echo "# Build Verification Summary for $arch"
+              echo "## Build Info"
+              echo "- Architecture: $arch"
+              echo "- Date: $(date)"
+              
+              echo -e "\n## Binary Comparison Results"
+              for bin in *.BIN; do
+                [ -f "$bin" ] || continue
+                echo "### $bin"
+                if [ -f "../profiling_materials/official_bins/$bin" ]; then
+                  if cmp -s "$bin" "../profiling_materials/official_bins/$bin"; then
+                    echo "✅ Matches official binary"
+                  else
+                    echo "❌ Differs from official binary"
+                    echo "\`\`\`"
+                    cmp "$bin" "../profiling_materials/official_bins/$bin" || true
+                    echo "\`\`\`"
+                    ((ERROR_BIN_COUNT++))
+                  fi
+                else
+                  echo "⚠️ No official binary found for comparison"
+                fi
+              done
+            } > ../verification_summary.$arch.md
+            
+            # Save error count to a file for later use
+            echo "ERROR_BIN_COUNT_$arch=$ERROR_BIN_COUNT" >> $GITHUB_ENV
+            
+            # Return to the root directory
+            cd ..
+          }
+          
+          # Build for both architectures
+          build_and_profile "arm64"
+          build_and_profile "x86_64"
+          
+          # Create Universal Binary
+          echo "Creating Universal Binary..."
+          lipo -create -output asm53b.universal build-arm64/asm53b.arm64 build-x86_64/asm53b.x86_64
+          
+          # Verify Universal Binary
+          echo "Universal Binary architectures:"
+          lipo -info asm53b.universal
+          
+          ERROR_BIN_COUNT=0
+          # Create combined verification report
+          {
+            echo "# Universal Binary Build Verification Summary"
+            echo "## Build Info"
+            echo "- Type: Universal Binary (x86_64 + arm64)"
+            echo "- Date: $(date)"
+            echo
+            echo "## Architectures"
+            echo "\`\`\`"
+            lipo -info asm53b.universal
+            echo "\`\`\`"
+            echo
+            echo "## arm64 Verification"
+            cat verification_summary.arm64.md
+            echo
+            echo "## x86_64 Verification"
+            cat verification_summary.x86_64.md
+            
+            # Compare BIN files between architectures
+            echo -e "\n## Architecture Binary Comparison"
+            for bin in build-arm64/*.BIN; do
+              basename=$(basename "$bin")
+              echo "### $basename"
+              if cmp -s "build-arm64/$basename" "build-x86_64/$basename"; then
+                echo "✅ Identical output between arm64 and x86_64"
+              else
+                echo "❌ Different output between architectures:"
+                echo "\`\`\`"
+                cmp "build-arm64/$basename" "build-x86_64/$basename" || true
+                echo "\`\`\`"
+                ((ERROR_BIN_COUNT++))
+              fi
+            done
+          } > verification_summary.md
+
+          # Save error count to a file for later use
+          echo "ERROR_BIN_COUNT=$ERROR_BIN_COUNT" >> $GITHUB_ENV
+
+          # Prepare final binary
+          strip asm53b.universal
+          mv asm53b.universal asm53b
+
+      - name: Display testcase errors in summary
+        run: |
+          TOTAL_ERRORS=$((ERROR_BIN_COUNT + ERROR_BIN_COUNT_arm64 + ERROR_BIN_COUNT_x86_64))
+          echo "### Total Testcase Errors: $TOTAL_ERRORS" >> $GITHUB_STEP_SUMMARY
+
+      - name: Package artifacts
+        run: |
+          # Create release package
+          tar czf asm53b-macos-universal.tar.gz asm53b
+          tar czf asm53b-macos-builtcase.tar.gz build-*
+          shasum -a 256 asm53b-macos-universal.tar.gz > asm53b-macos-universal.tar.gz.sha256
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: asm53b-macos-universal
+          path: |
+            asm53b-macos-universal.tar.gz
+            asm53b-macos-universal.tar.gz.sha256
+            asm53b-macos-builtcase.tar.gz
+            verification_summary.md

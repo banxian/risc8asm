@@ -1,0 +1,145 @@
+name: Linux Build with PGO
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [x86_64, i686]
+        libc: [gnu, musl]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+          if [ "${{ matrix.arch }}" = "i686" ]; then
+            sudo apt-get install -y gcc-multilib
+            sudo apt-get install -y lib32gcc-11-dev
+          fi
+          if [ "${{ matrix.libc }}" = "musl" ]; then
+            sudo apt-get install -y musl musl-tools
+          fi
+
+      - name: Build with PGO
+        run: |
+          # Set compiler and flags
+          if [ "${{ matrix.libc }}" = "musl" ]; then
+            CC="musl-gcc"
+            CFLAGS="-std=gnu99 -Wno-multichar -O3 -fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0"
+            # For musl, directly build without PGO
+            echo "Building musl version..."
+            $CC $CFLAGS $LDFLAGS asm53b.c -o asm53b
+          else
+            CC="gcc"
+            CFLAGS="-std=gnu99 -Wno-multichar -O3"
+            
+            if [ "${{ matrix.arch }}" = "i686" ]; then
+              CFLAGS="$CFLAGS -m32"
+            fi
+            
+            # PGO steps only for non-musl builds
+            echo "Building instrumented version..."
+            $CC $CFLAGS -fprofile-generate asm53b.c -o asm53b
+            
+            # Define assembly files for profiling
+            ASM_FILES=("RGB1W.ASM" "PIOC_IIC.ASM" "PIOC_Single_Wire.ASM" "PIOC_UART.ASM")
+            
+            # Run with instrumentation to collect profile data
+            for file in "${ASM_FILES[@]}"; do
+              if [ -f "profiling_materials/$file" ]; then
+                echo "Processing $file for profiling..."
+                ./asm53b "profiling_materials/$file"
+              fi
+            done
+            
+            # Rebuild using profile data
+            echo "Building optimized version..."
+            $CC $CFLAGS -fprofile-use asm53b.c -o asm53b
+          fi
+          
+          # Generate binaries and verify against official bins
+          ASM_FILES=("RGB1W.ASM" "PIOC_IIC.ASM" "PIOC_Single_Wire.ASM" "PIOC_UART.ASM")
+          echo "Generating binaries and verifying..."
+          for file in "${ASM_FILES[@]}"; do
+            if [ -f "profiling_materials/$file" ]; then
+              echo "Processing $file with optimized binary..."
+              ./asm53b "profiling_materials/$file"
+              
+              # Get base name without extension and add .BIN
+              base_name=$(basename "${file%.*}")
+              gen_bin="${base_name}.BIN"
+              
+              if [ -f "$gen_bin" ]; then
+                if [ -f "profiling_materials/official_bins/$gen_bin" ]; then
+                  if cmp -s "$gen_bin" "profiling_materials/official_bins/$gen_bin"; then
+                    echo "✅ $gen_bin matches official bin"
+                  else
+                    echo "❌ $gen_bin differs from official bin:"
+                    cmp "$gen_bin" "profiling_materials/official_bins/$gen_bin" || true
+                  fi
+                else
+                  echo "⚠️ No official bin found for $gen_bin"
+                fi
+              else
+                echo "❌ Failed to generate $gen_bin"
+              fi
+            fi
+          done
+
+      - name: Create verification summary
+        run: |
+          {
+            echo "# Build Verification Summary"
+            echo "## Build Info"
+            echo "- Architecture: ${{ matrix.arch }}"
+            echo "- Libc: ${{ matrix.libc }}"
+            echo "- Date: $(date)"
+            
+            echo -e "\n## Binary Comparison Results"
+            for bin in *.BIN; do
+              [ -f "$bin" ] || continue
+              echo "### $bin"
+              if [ -f "profiling_materials/official_bins/$bin" ]; then
+                if cmp -s "$bin" "profiling_materials/official_bins/$bin"; then
+                  echo "✅ Matches official binary"
+                else
+                  echo "❌ Differs from official binary"
+                  echo "\`\`\`"
+                  cmp "$bin" "profiling_materials/official_bins/$bin" || true
+                  echo "\`\`\`"
+                fi
+              else
+                echo "⚠️ No official binary found for comparison"
+              fi
+            done
+          } > verification_summary.md
+
+      - name: Create artifact name
+        id: artifact-name
+        run: |
+          echo "name=asm53b-linux-${{ matrix.arch }}-${{ matrix.libc }}" >> $GITHUB_OUTPUT
+
+      - name: Package binary and verification results
+        run: |
+          strip asm53b
+          tar czf "${{ steps.artifact-name.outputs.name }}.tar.gz" --ignore-failed-read asm53b *.BIN *.LST
+          sha256sum "${{ steps.artifact-name.outputs.name }}.tar.gz" > "${{ steps.artifact-name.outputs.name }}.tar.gz.sha256"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.artifact-name.outputs.name }}
+          path: |
+            ${{ steps.artifact-name.outputs.name }}.tar.gz
+            ${{ steps.artifact-name.outputs.name }}.tar.gz.sha256
+            verification_summary.md
+            *.BIN
