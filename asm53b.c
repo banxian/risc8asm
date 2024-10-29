@@ -16,7 +16,7 @@
 #define MAX_ADDR 0x1000
 #define MAX_SYMBOL 4096
 #define ARRAY_INCREMENTAL 16
-#define BANNER "MCU CH53X ASSEMBLER:  ASM53B Ver 0.1\nCompatible with original WASM53B assembler\nFor bug report, visit: https://github.com/banxian/asm53b\n\n"
+#define BANNER "MCU CH53X ASSEMBLER:  ASM53B Ver 0.1\nCompatible with original WASM53B assembler\nFor bug report, visit: https://github.com/banxian/risc8asm\n\n"
 
 
 enum symbol_status
