@@ -32,16 +32,14 @@ jobs:
       - name: Build with PGO
         run: |
           # Set compiler and flags
+          CFLAGS="-std=gnu99 -Wno-multichar -O3 -flto -fno-exceptions -fomit-frame-pointer -ffunction-sections -fdata-sections -fmerge-all-constants -finline-functions -finline-small-functions -freorder-functions -fno-unwind-tables -fno-asynchronous-unwind-tables -ffast-math -fno-stack-protector -Wl,--gc-sections -s -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0"
           if [ "${{ matrix.libc }}" = "musl" ]; then
             CC="musl-gcc"
-            CFLAGS="-std=gnu99 -Wno-multichar -O3 -fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0"
             # For musl, directly build without PGO
             echo "Building musl version..."
-            $CC $CFLAGS $LDFLAGS asm53b.c -o asm53b
+            $CC $CFLAGS asm53b.c -o asm53b
           else
             CC="gcc"
-            CFLAGS="-std=gnu99 -Wno-multichar -O3"
-            
             if [ "${{ matrix.arch }}" = "i686" ]; then
               CFLAGS="$CFLAGS -m32"
             fi
