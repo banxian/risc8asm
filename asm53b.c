@@ -6,7 +6,9 @@
 #include <time.h>
 #include <ctype.h>
 #include <stdarg.h>
+#ifdef _MSC_VER
 #include <malloc.h>
+#endif
 #include "risc8bins.h"
 
 
