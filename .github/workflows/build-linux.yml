@@ -129,7 +129,8 @@ jobs:
       - name: Package binary and verification results
         run: |
           strip asm53b
-          tar czf "${{ steps.artifact-name.outputs.name }}.tar.gz" --ignore-failed-read asm53b *.BIN *.LST
+          tar czf "${{ steps.artifact-name.outputs.name }}.tar.gz" --ignore-failed-read asm53b
+          tar czf "${{ steps.artifact-name.outputs.name }}.builtcase.tar.gz" --ignore-failed-read *.BIN *.LST
           sha256sum "${{ steps.artifact-name.outputs.name }}.tar.gz" > "${{ steps.artifact-name.outputs.name }}.tar.gz.sha256"
 
       - name: Upload artifacts
@@ -139,5 +140,5 @@ jobs:
           path: |
             ${{ steps.artifact-name.outputs.name }}.tar.gz
             ${{ steps.artifact-name.outputs.name }}.tar.gz.sha256
+            ${{ steps.artifact-name.outputs.name }}.builtcase.tar.gz
             verification_summary.md
-            *.BIN
