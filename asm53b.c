@@ -29,10 +29,10 @@ enum symbol_status
 
 struct label_item_s
 {
-    char name[28]; // padding with space
-    char status;
-    char type;
-    int address;
+    char name[28];  // padded with spaces
+    char status;    // undefined/redefined/unused/normal
+    char type;      // 0=label, 1=constant
+    int address;    // PC address or constant value
 };
 
 void save_symbol(char *line, int addr, char type);
@@ -127,7 +127,7 @@ int main(int argc, const char **argv)
         return 11;
     }
     //setvbuf(g_srcfile, g_srcvbuf, _IOFBF, sizeof(g_srcvbuf)); // no need _IOLBF
-    outfname = slashpos?&fullname[slashpos]:fullname; // make sure outfname is place on build folder rather than source folder
+    outfname = slashpos?&fullname[slashpos]:fullname; // make sure output files is placed on build folder rather than source folder
     strcpy(&fullname[extpos], "LST");
     printf("Create list file %s\n", outfname);
     g_listfile = fopen(outfname, "wt");
@@ -255,6 +255,8 @@ bool is_first_label_char(char c) {
             c == '_' || c == '$' || c == '#' || c == '@';
 }
 
+// Binary search in ordered symbol table
+// Returns index if found, or -(insertion_point + 1) if not found
 int binary_search(const char *name) {
     int left = 0, right = Total_Label - 1;
 
@@ -268,6 +270,12 @@ int binary_search(const char *name) {
     return -(left + 1);
 }
 
+/// Save a symbol (label or constant) to the global symbol table
+/// @param line Source line containing the symbol (will be wiped)
+/// @param addr Symbol value - PC address for labels, constant value for EQU
+/// @param type Symbol type: 0 for labels, 1 for constants(EQU)
+/// @note Maintains symbol table in sorted order for binary search
+/// @note Detects and handles symbol redefinition
 void save_symbol(char *line, int addr, char type)
 {
     int pos;
@@ -322,6 +330,10 @@ void save_symbol(char *line, int addr, char type)
     ++Total_Label;
 }
 
+/// Find a symbol in the global symbol table using binary search
+/// @param symbol Symbol name to search for
+/// @return Pointer to found symbol item, or NULL if not found
+/// @note Symbol names in table was padded with spaces
 struct label_item_s * find_symbol(const char* symbol)
 {
     int pos;
@@ -370,8 +382,16 @@ const char* skip_printable_chars(const char* str)
     return str;
 }
 
-// will wipe found number to spaces
-// input str is uppercased
+/// Parse and evaluate numeric expressions in assembly source
+/// @param str Input uppercase string containing expression (will be wiped)
+/// @return Evaluated value, or -1 on error
+/// @note Handles:
+/// @note - Decimal/hex/binary/character constants
+/// @note - Labels and symbols
+/// @note - Unary operators (-,~)
+/// @note - Binary operators (+,-,*,/,%,&,|,^,<<,>>)
+/// @note Recursively evaluates complex expressions
+/// @note Modified input string by replacing processed parts with spaces
 int solve_number(char *str)
 {
     unsigned int address;
@@ -458,6 +478,7 @@ int solve_number(char *str)
     w0 = c0 << 8 | opstr[1];
     havepost = (w0 == '<<') || (w0 == '>>');
 
+    // does expression finished here?
     if (c0 != '+' && c0 != '-' && c0 != '*' && c0 != '/' && c0 != '%' && c0 != '&' && c0 != '|' && c0 != '^' && c0 != '~' && !havepost) {
         return address;
     }
@@ -499,7 +520,13 @@ int solve_number(char *str)
     return num;
 }*/
 
-// Helper for pass1/pass2
+/// Pre-process a source line for pass1/pass2
+/// @return Length of processed line
+/// @note Performs:
+/// @note - Convert to uppercase
+/// @note - Replace tabs/commas with spaces
+/// @note - Remove comments
+/// @note - Store result in g_linebuf
 int prefilter_fileline()
 {
     size_t linelen = strlen(g_fileline);
@@ -533,6 +560,13 @@ int prefilter_fileline()
 
 typedef int (*pass_func)(FILE *file, const char* srcdir, int addr);
 
+/// Process an INCLUDE directive
+/// @param head Pointer to the include statement
+/// @param addr Current PC address (modified after nestcall)
+/// @param srcdir Source directory path
+/// @param nestcall Function to process included file (pass1 or pass2)
+/// @note Limits nesting to 8 levels
+/// @note Resolves included file path relative to parent file
 void process_inclusion(char* head, int* addr, const char* srcdir, pass_func nestcall)
 {
     if (g_nestlevel <= 8) {
@@ -554,7 +588,7 @@ void process_inclusion(char* head, int* addr, const char* srcdir, pass_func nest
             }
         }
 #ifdef _MSC_VER
-        joinedpath = _alloca(srcdirlen + inclen + 2);
+        joinedpath = (char*)_alloca(srcdirlen + inclen + 2);
 #else
         char joinedpath[srcdirlen + inclen + 2];
 #endif
@@ -588,7 +622,12 @@ void process_inclusion(char* head, int* addr, const char* srcdir, pass_func nest
     }
 }
 
-// only log inclusion to list file
+/// Perform first pass of assembly to collect all symbols
+/// @param file Source file handle
+/// @param srcdir Source file directory path for resolving includes
+/// @param addr Starting PC for code generation
+/// @return Final PC after pass 1, or -1 on error
+/// @note Collects all symbols but does not generate code
 int pass1_readlines(FILE *file, const char* srcdir, int addr)
 {
     for (g_readedlinecount = 1; g_readedlinecount < MAX_LINES && addr < MAX_ADDR; g_readedlinecount++) {
@@ -669,7 +708,13 @@ int pass1_readlines(FILE *file, const char* srcdir, int addr)
 
 int gen_opcode(char* mnemhead, int addr, int* table);
 
-// generate opcodes and use symbol table from pass1
+/// Perform second pass of assembly to generate opcodes
+/// @param file Source file handle  
+/// @param srcdir Source file directory path for resolving includes
+/// @param addr Starting PC for code generation
+/// @return Final PC after pass 2, or -1 on error
+/// @note Uses symbol table from pass 1 to resolve all references
+/// @note Generates binary output and listing file
 int pass2_assemble(FILE *file, const char* srcdir, int addr)
 {
     int table = 0;
@@ -764,9 +809,15 @@ int pass2_assemble(FILE *file, const char* srcdir, int addr)
     return addr;
 }
 
-int parse_f_F_address(char* paras, bool isf8);
+int parse_f_F_address(char* regnumber, bool isf8);
 #define optional_F_post(c,n) (c <= ' ' || (c == 'F' && n <= ' '))
 
+/// Generate opcode for an instruction
+/// @param mnemhead Pointer to instruction mnemonic
+/// @param addr Current PC address
+/// @param table Table boundary tracking from callee
+/// @return Generated opcode, or -1 on error
+/// @note Updates listing file with generated code
 int gen_opcode(char* mnemhead, int addr, int* table)
 {
     int opcode = 0;
@@ -1125,12 +1176,11 @@ int gen_opcode(char* mnemhead, int addr, int* table)
 
     if (instype == -1) {
         log_error("unknown instruction", prefixd); // better use FOURCC
-        //printf("%02X %02X %02X %02X, %02X %02X %02X %02X\n", g_fileline[0], g_fileline[1], g_fileline[2], g_fileline[3], pf0, pf1, pf2, pf3);
-        opcode = _OP_NOP;
-        //return -1; // Compatible to offical behavor (treat as NOP)
+        opcode = _OP_NOP; // Does not return and treat as NOP, Compatible to official behavor
+        //return -1;
     }
 
-    // tracking pc address in 256 range
+    // Track program counter to ensure table operations stay within 256-byte page boundaries
     if (*table) {
         if (opcode == _OP_RETL || opcode == _OP_RETLN) {
             if ((addr >> 8) != (*table >> 8)) {
@@ -1363,9 +1413,9 @@ int gen_opcode(char* mnemhead, int addr, int* table)
     return opcode;
 }
 
-int parse_f_F_address(char* paras, bool isf8)
+int parse_f_F_address(char* regnumber, bool isf8)
 {
-    int faddr = solve_number(paras);
+    int faddr = solve_number(regnumber);
     if (isf8 && faddr > 0xFF) {
         log_error("invalid address of f register", faddr);
         faddr = (unsigned char)faddr;
