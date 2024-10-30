@@ -37,9 +37,10 @@ jobs:
             CC="musl-gcc"
             # For musl, directly build without PGO
             echo "Building musl version..."
-            $CC $CFLAGS asm53b.c -o asm53b
+            $CC $CFLAGS -static asm53b.c -o asm53b
           else
             CC="gcc"
+            CFLAGS="$CFLAGS -Wl,--hash-style=both"
             if [ "${{ matrix.arch }}" = "i686" ]; then
               CFLAGS="$CFLAGS -m32"
             fi
