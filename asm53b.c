@@ -9,6 +9,13 @@
 #ifdef _MSC_VER
 #include <malloc.h>
 #endif
+#ifdef _WIN32
+#include <direct.h>
+#else
+#include <sys/stat.h>
+#define _mkdir(path) mkdir(path, 0755)
+#define stricmp(s1,s2) strcasecmp(s1,s2)
+#endif
 #include "risc8bins.h"
 
 
@@ -16,7 +23,7 @@
 #define MAX_ADDR 0x1000
 #define MAX_SYMBOL 4096
 #define ARRAY_INCREMENTAL 16
-#define BANNER "MCU CH53X ASSEMBLER:  ASM53B Ver 0.1\nCompatible with original WASM53B assembler\nFor bug report, visit: https://github.com/banxian/risc8asm\n\n"
+#define BANNER "MCU CH53X ASSEMBLER:  ASM53B Ver 0.2\nCompatible with original WASM53B assembler\nFor bug report, visit: https://github.com/banxian/risc8asm\n\n"
 
 
 enum symbol_status
@@ -68,43 +75,82 @@ uint16_t g_opcodebuf[MAX_ADDR + 1];
 char g_listvbuf[65536];
 //char g_srcvbuf[8192];
 
-
-int main(int argc, const char **argv)
+void usage(char* exepath)
 {
-    const char *srcfname;
+    char* ext;
+    char* cmdname = strrchr(exepath, '/');
+#ifdef _WIN32
+    if (!cmdname) {
+        cmdname = strrchr(exepath, '\\');
+    }
+#endif
+    cmdname = cmdname ? cmdname + 1 : exepath;
+#ifdef _WIN32
+    if ((ext = strrchr(cmdname, '.'))) {
+        if (stricmp(ext, ".exe") == 0) {
+            *ext = 0;
+        }
+    }
+#endif
+    printf("Usage: %s source_file [options]\n"
+        "\n"
+        "Options:\n"
+        "  -f         Generate full size (4K) binary output\n"
+        "  -o <name>  Specify name for output file\n"
+        "  -h         Generate header file with opcode array\n"
+        "\n"
+        "Example:\n"
+        "  %s mode.asm -o demo -h      Output: demo.LST, demo.BIN, demo_inc.h\n", cmdname, cmdname);
+}
+
+int main(int argc, char *argv[])
+{
+    const char *srcfname = NULL, *outbase = NULL;
     int fnlen;
     int extpos, slashpos;
     int pass1pc, pass2pc;
     time_t now;
     struct tm tm;
-    char* outfname;
+    char* outfname, *lpext;
     char outfpre;
 #ifdef _MSC_VER
-    char* fullname;
+    char* fullname, *outbaseext;
 #endif
-    bool fullsizebin = false;
+    bool fullsizebin = false, exportheader = false;
 
     g_logicoplimit = 0xFF;
     printf(BANNER);
-    if (argc < 2) {
-        printf("Usage:\n  ASM53B  source_file_name  [/F]\nEnable full size BIN by parameter /F\n");
-        return 5;
-    }
-    for (int i = 2; i < argc; i++) {
+    for (int i = 1; i < argc; i++) {
         const char * argi = argv[i];
         if ((argi[0] == '/' || argi[0] == '-') &&
-            (argi[1] == 'F' || argi[1] == 'f')) {
+            (argi[1] == 'F' || argi[1] == 'f') && argi[2] == 0) {
             fullsizebin = true;
+        } else if (strcmp(argi, "-o") == 0) {
+            outbase = argv[++i];
+        } else if (strcmp(argi, "-h") == 0) {
+            exportheader = true;
+        } else {
+            srcfname = argv[i];
         }
     }
-    srcfname = argv[1];
+    if (argc < 2 || srcfname == NULL) {
+        usage(argv[0]);
+        return 5;
+    }
     fnlen = strlen(srcfname);
 #ifdef _MSC_VER
     fullname = (char*)_alloca(fnlen + sizeof(".ASM"));
+    if (outbase) {
+        outbaseext = (char*)_alloca(strlen(outbase) + sizeof("_inc.h"));
+    }
 #else
     char fullname[fnlen + sizeof(".ASM")];
+    char outbaseext[outbase?strlen(outbase) + sizeof("_inc.h"):1];
 #endif
     strcpy(fullname, srcfname);
+    if (outbase) {
+        strcpy(outbaseext, outbase);
+    }
     extpos = 0;
     slashpos = 0;
     for (int i = 0; i < fnlen; i++) {
@@ -127,8 +173,34 @@ int main(int argc, const char **argv)
         return 11;
     }
     //setvbuf(g_srcfile, g_srcvbuf, _IOFBF, sizeof(g_srcvbuf)); // no need _IOLBF
-    outfname = slashpos?&fullname[slashpos]:fullname; // make sure output files is placed on build folder rather than source folder
-    strcpy(&fullname[extpos], "LST");
+    if (outbase) {
+        int slashpos = 0, extpos = 0;
+        for (int i = 0; outbase[i]; i++) {
+            if (outbase[i] == '.') {
+                extpos = i + 1;
+            } else if (outbase[i] == '\\' || outbase[i] == '/') {
+                extpos = 0;
+                slashpos = i; 
+            }
+        }
+        if (slashpos) {
+            char c = outbaseext[slashpos];
+            outbaseext[slashpos] = 0;
+            _mkdir(outbaseext);
+            outbaseext[slashpos] = c;
+        }
+        outfname = outbaseext;
+        if (extpos == 0) {
+            lpext = &outbaseext[strlen(outbaseext)];
+            *lpext++ = '.';
+        } else {
+            lpext = &outbaseext[extpos];
+        }
+    } else {
+        outfname = &fullname[slashpos]; // make sure output files is placed on build folder rather than source folder
+        lpext = &fullname[extpos];
+    }
+    strcpy(lpext, "LST");
     printf("Create list file %s\n", outfname);
     g_listfile = fopen(outfname, "wt");
     if (!g_listfile) {
@@ -156,8 +228,8 @@ int main(int argc, const char **argv)
     listprintf("\nPass1 -------------------------------------------------------------------------\n");
     listprintf("LINE ,  PC ,  CODE/DATA: SOURCE\n");
     if (slashpos) {
-        outfpre = *outfname;
-        *outfname = 0; // fullname became folder path
+        outfpre = fullname[slashpos];
+        fullname[slashpos] = 0; // fullname became folder path
     }
 
     pass1pc = pass1_readlines(g_srcfile, slashpos?fullname:NULL, 0); // solve labels, equ, org
@@ -167,7 +239,7 @@ int main(int argc, const char **argv)
         rewind(g_srcfile);
         listprintf("\nPass2 -------------------------------------------------------------------------\n");
         listprintf("LINE ,  PC ,  CODE/DATA: SOURCE\n");
-        pass2pc = pass2_assemble(g_srcfile, slashpos?fullname:NULL, 0);
+        pass2pc = pass2_assemble(g_srcfile, slashpos?fullname:NULL, 0); // generate opcodes
         g_readedlinecount = 0;
         g_fileline[0] = 0;
         if (pass2pc != -1 && pass2pc != pass1pc) {
@@ -193,10 +265,10 @@ int main(int argc, const char **argv)
 
     listprintf("\nEnd = %04XH -------------------------------------------------------------------\n", pass2pc);
     if (pass2pc != -1 && pass2pc == pass1pc) {
-        FILE* binfile;
-        strcpy(&fullname[extpos], "BIN");
+        FILE* binfile, *hdrfile;
+        strcpy(lpext, "BIN");
         if (slashpos) {
-            *outfname = outfpre;
+            fullname[slashpos] = outfpre; // dir back to file path
         }
         printf("Create data file %s\n", outfname);
         binfile = fopen(outfname, "wb");
@@ -211,6 +283,20 @@ int main(int argc, const char **argv)
         } else {
             printf("Can not create data file\n");
             log_error("error creating data file", 0);
+        }
+        if (exportheader) {
+            strcpy(lpext - 1, "_inc.h");
+            hdrfile = fopen(outfname, "wt");
+            if (hdrfile) {
+                size_t bytecnt = (fullsizebin ? 4096 : pass2pc)*2;
+                fprintf(hdrfile, "const char PICO_CODE[] = {\n");
+                for (size_t i = 0; i < bytecnt; i++) {
+                    const char* fmt = (i % 16 == 0)?"    0x%02X,":(i == bytecnt - 1)?" 0x%02X\n":(i % 16 == 15)?" 0x%02X,\n":" 0x%02X,";
+                    fprintf(hdrfile, fmt, *((unsigned char*)g_opcodebuf + i));
+                }
+                fprintf(hdrfile, "}\n");
+                fclose(hdrfile);
+            }
         }
     }
     // if warning and error present
@@ -408,7 +494,7 @@ int solve_number(char *str)
     c0 = head[0];
     w0 = c0 << 8 | head[1];
     // numbers starting with: digits, single quote, or H' D' B' prefix
-    if (c0 >= '0' && c0 <= '9' || c0 == '\'' || w0 == 'H\'' || w0 == 'D\'' || w0 == 'B\'') {
+    if ((c0 >= '0' && c0 <= '9') || c0 == '\'' || w0 == 'H\'' || w0 == 'D\'' || w0 == 'B\'') {
         address = 0;
         g_indigi = 1;
         if (c0 == '\'') {
@@ -1126,7 +1212,7 @@ int gen_opcode(char* mnemhead, int addr, int* table)
             opcode = _OP_RETZ;
             instype = et_None;
         }
-        if (mid2 == 'IE' && pf5 <= ' ' || pf3 == 'I' && pf4 <= ' ') {
+        if ((mid2 == 'IE' && pf5 <= ' ') || (pf3 == 'I' && pf4 <= ' ')) {
             opcode = _OP_RETIE;
             instype = et_None;
         }
