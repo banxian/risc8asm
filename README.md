@@ -38,6 +38,8 @@ asm53b asmfile [-f]
 
 - `asmfile`: 汇编源文件, 如省略后缀名, 会自动添加`.ASM`
 - `-f`: 可选参数, 生成完整ROM大小的二进制文件, 未使用部分填充NOP指令
+- `-o <name>`: 可选参数, 指定输出文件名, 不指定的话默认和源文件同名
+- `-h`: 可选参数, 保存C语言格式的数组头文件
 
 ### 主要改进
 
@@ -47,6 +49,8 @@ asm53b asmfile [-f]
 3. ✓ 生成的BIN和LST文件默认输出到工作目录
 4. ✓ 增加了高速的写列表文件函数
 5. ✓ 加速了符号表查询
+6. ✓ 指定输出文件名
+7. ✓ 输出为C数组格式
 
 ### TODO
 
@@ -56,7 +60,6 @@ asm53b asmfile [-f]
 
 
 #### 待增强
-- [ ] 输出为C数组格式
 - [ ] 去除标号数量限制
 - [ ] 更详细的错误信息
 - [ ] 支持条件汇编
@@ -96,14 +99,14 @@ Optional built-in listprintf to reduce list file writing time:
 gcc -O3 -DLITE_PRINTF -Wno-multichar -o asm53b asm53b.c
 ```
 
-### Usage
-
 ```bash
-asm53b asmfile [-f]
+asm53b asmfile [options]
 ```
 
 - `asmfile`: Assembly source file, `.ASM` extension will be added if omitted
 - `-f`: Optional: generate full ROM-sized binary with unused space filled with NOP
+- `-o <name>`: Optional: specify output filename (defaults to source filename if not specified)
+- `-h`: Optional: generate C-style array header file
 
 ### Improvements
 
@@ -113,6 +116,8 @@ Compared to the official wasm53b assembler:
 3. ✓ Generated files (BIN/LST) are placed in working directory
 4. ✓ Added high-performance list file writing function
 5. ✓ Accelerated symbol table lookup
+6. ✓ Added custom output filename option
+7. ✓ Added C array format output
 
 ### TODO
 
@@ -121,7 +126,6 @@ Compared to the official wasm53b assembler:
 - [x] INCLUDE path resolution
 
 #### Enhancements
-- [ ] C array output format
 - [ ] Remove Label/EQU count limitation
 - [ ] Enhanced error messages
 - [ ] Conditional assembly support
