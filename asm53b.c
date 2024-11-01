@@ -147,12 +147,12 @@ int main(int argc, char *argv[])
     }
     fnlen = strlen(srcfname);
 #ifdef _MSC_VER
-    fullname = (char*)_alloca(fnlen + sizeof(".ASM"));
+    fullname = (char*)_alloca(fnlen + sizeof("_inc.h"));
     if (outbase) {
         outbaseext = (char*)_alloca(strlen(outbase) + sizeof("_inc.h"));
     }
 #else
-    char fullname[fnlen + sizeof(".ASM")];
+    char fullname[fnlen + sizeof("_inc.h")];
     char outbaseext[outbase?strlen(outbase) + sizeof("_inc.h"):1];
 #endif
     strcpy(fullname, srcfname);
@@ -741,8 +741,7 @@ int pass1_readlines(FILE *file, const char* srcdir, int addr)
             g_readedlinecount++;
             break;
         } else if (head[0] == 'O' && head[1] == 'R' && head[2] == 'G' && is_tab_or_space(head[3])) {
-            char* orgstr = (char*)skip_prefix_spaces(&head[3]);
-            int orgaddr = solve_number(orgstr);
+            int orgaddr = solve_number(&head[3]);
             if (orgaddr > 0xFFF) {
                 log_error("invalid ORG address", orgaddr);
             } else {
@@ -769,8 +768,7 @@ int pass1_readlines(FILE *file, const char* srcdir, int addr)
                 char* equ = (char*)skip_prefix_spaces(&g_linebuf[lablen]);
                 lablen = equ - g_linebuf;
                 if (equ[0] == 'E' && equ[1] == 'Q' && equ[2] == 'U' && is_tab_or_space(equ[3])) {
-                    char* valstr = (char*)skip_prefix_spaces(&equ[3]);
-                    int val = solve_number(valstr); // double skip
+                    int val = solve_number(&equ[3]);
                     save_symbol(g_linebuf, val, 1); // named constant
                 } else {
                     save_symbol(g_linebuf, addr, 0); // address symbol
@@ -832,8 +830,7 @@ int pass2_assemble(FILE *file, const char* srcdir, int addr)
             g_readedlinecount++;
             break;
         } else if (head[0] == 'O' && head[1] == 'R' && head[2] == 'G' && is_tab_or_space(head[3])) {
-            char* orgstr = (char*)skip_prefix_spaces(&head[3]);
-            int orgaddr = solve_number(orgstr);
+            int orgaddr = solve_number(&head[3]);
             if (orgaddr > 0xFFF) {
                 log_error("invalid ORG address", orgaddr);
             } else {
@@ -863,8 +860,7 @@ int pass2_assemble(FILE *file, const char* srcdir, int addr)
                 char* equ = (char*)skip_prefix_spaces(&g_linebuf[lablen]);
                 lablen = equ - g_linebuf;
                 if (equ[0] == 'E' && equ[1] == 'Q' && equ[2] == 'U' && is_tab_or_space(equ[3])) {
-                    char* valstr = (char*)skip_prefix_spaces(&equ[3]);
-                    int val = solve_number(valstr); // double skip
+                    int val = solve_number(&equ[3]);
                     listprintf("L=%04d, ......, D=%04X : %s\n", g_readedlinecount, val, g_fileline); // type 0, data
                 } else {
                     if (lablen < linelen) {
