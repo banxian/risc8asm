@@ -1575,6 +1575,13 @@ int listprintf(__in_z __format_string const char * _Format, ...)
                 int num = va_arg(args, int);
                 buf_ptr += sprintf(buf_ptr, "%d", num);
                 fmt_ptr++;  // Skip 'd'
+            } else if (fmt_ptr[0] >= '1' && fmt_ptr[0] <= '9' && fmt_ptr[1] == 'd') {
+                // Handle %3d -> decimal integer
+                int num = va_arg(args, int);
+                char fmt[4] = "%3d";
+                fmt[1] = fmt_ptr[0];
+                buf_ptr += sprintf(buf_ptr, fmt, num);
+                fmt_ptr+=2;  // Skip '3d'
             } else if (*fmt_ptr == 's') {
                 // Handle %s -> string
                 const char *str = va_arg(args, const char *);
