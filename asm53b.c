@@ -78,11 +78,10 @@ char g_listvbuf[65536];
 void usage(char* exepath)
 {
     char* ext;
-    char* cmdname = strrchr(exepath, '/');
 #ifdef _WIN32
-    if (!cmdname) {
-        cmdname = strrchr(exepath, '\\');
-    }
+    char* cmdname = strrchr(exepath, '\\');
+#else
+    char* cmdname = strrchr(exepath, '/');
 #endif
     cmdname = cmdname ? cmdname + 1 : exepath;
 #ifdef _WIN32
@@ -101,6 +100,15 @@ void usage(char* exepath)
         "\n"
         "Example:\n"
         "  %s mode.asm -o demo -h      Output: demo.LST, demo.BIN, demo_inc.h\n", cmdname, cmdname);
+}
+
+bool is_path_delimiter(const char c)
+{
+#ifdef _WIN32
+    return c== '\\' || c == '/';
+#else
+    return c == '/';
+#endif
 }
 
 int main(int argc, char *argv[])
@@ -156,7 +164,7 @@ int main(int argc, char *argv[])
     for (int i = 0; i < fnlen; i++) {
         if (srcfname[i] == '.') {
             extpos = i + 1;
-        } else if (srcfname[i] == '\\' || srcfname[i] == '/') {
+        } else if (is_path_delimiter(srcfname[i])) {
             extpos = 0;
             slashpos = i + 1;
         }
@@ -680,22 +688,16 @@ void process_inclusion(char* head, int* addr, const char* srcdir, pass_func nest
 #endif
         if (srcdirlen) {
             strncpy(joinedpath, srcdir, srcdirlen);
-            //joinedpath[srcdirlen] = '\\';
-            strncpy(&joinedpath[srcdirlen], incname, inclen);
-            joinedpath[srcdirlen+inclen] = 0;
-            incfile = fopen(joinedpath, "rt");
-            //printf("joinedpath: %s\n", joinedpath);
-            joinedpath[srcdirlen + slashpos] = 0;
-        } else {
-            // TODO: use relative path of parent file
-            incfile = fopen(incname, "rt");
-            //printf("incname: %s\n", joinedpath);
-            incname[slashpos] = 0;
         }
+        strncpy(&joinedpath[srcdirlen], &g_fileline[incname - g_linebuf], inclen); // take from fileline with raw case
+        joinedpath[srcdirlen+inclen] = 0;
+        incfile = fopen(joinedpath, "rt");
+        //printf("joinedpath: %s\n", joinedpath);
+        joinedpath[srcdirlen + slashpos] = 0;
         if (incfile) {
             int savedlinecnt = g_readedlinecount;
             g_nestlevel++;
-            *addr = nestcall(incfile, srcdirlen ? joinedpath : incname, *addr);
+            *addr = nestcall(incfile, joinedpath, *addr);
             g_nestlevel--;
             g_readedlinecount = savedlinecnt;
             fclose(incfile);
@@ -999,14 +1001,26 @@ int gen_opcode(char* mnemhead, int addr, int* table)
             instype = et_k2; // k2
         }
         break;
-    case 'RCL': // RCL=RCLF
+    case 'RCL': // RCL=RCLF=RLF
         if (optional_F_post(pf3, pf4)) {
             opcode = _OP_RCL;
             instype = et_f8_d1; // f,d
         }
         break;
-    case 'RCR': // RCR=RCRF
+    case 'RLF':
+        if (pf3 <= ' ') {
+            opcode = _OP_RCL;
+            instype = et_f8_d1; // f,d
+        }
+        break;
+    case 'RCR': // RCR=RCRF=RRF
         if (optional_F_post(pf3, pf4)) {
+            opcode = _OP_RCR;
+            instype = et_f8_d1; // f,d
+        }
+        break;
+    case 'RRF':
+        if (pf3 <= ' ') {
             opcode = _OP_RCR;
             instype = et_f8_d1; // f,d
         }
