@@ -94,7 +94,7 @@ void usage(char* exepath)
     printf("Usage: %s source_file [options]\n"
         "\n"
         "Options:\n"
-        "  -f         Generate full size (4K) binary output\n"
+        "  -f         Generate full size (8KB) binary output\n"
         "  -o <name>  Specify name for output file\n"
         "  -h         Generate header file with opcode array\n"
         "\n"
@@ -282,7 +282,7 @@ int main(int argc, char *argv[])
         binfile = fopen(outfname, "wb");
         if (binfile) {
             size_t writecnt = fullsizebin?4096:pass2pc;
-            size_t writed = fwrite(g_opcodebuf, 2u, writecnt, binfile); // 1pc 2byte
+            size_t writed = fwrite(g_opcodebuf, 2, writecnt, binfile); // 2byte per instruction
             fclose(binfile);
             if (writed != writecnt) {
                 printf("Can not write code to data file\n");
@@ -477,7 +477,7 @@ const char* skip_printable_chars(const char* str)
 }
 
 /// Parse and evaluate numeric expressions in assembly source
-/// @param str Input uppercase string containing expression (will be wiped)
+/// @param str Input uppercase string containing expression (processed part will be wiped)
 /// @return Evaluated value, or -1 on error
 /// @note Handles:
 /// @note - Decimal/hex/binary/character constants
@@ -547,7 +547,7 @@ int solve_number(char *str)
                 curr->status = ssNormal;
         } else {
             log_error("label undefined", g_readedlinecount);
-            save_symbol(head, -1, -1);
+            save_symbol(head, -1, -1); // prevent next error
             return -1;
         }
         address = curr->address;
@@ -1485,7 +1485,7 @@ int gen_opcode(char* mnemhead, int addr, int* table)
         break;
     case et_dw: // DW data
         {
-            g_logicoplimit = 0xFFFF;  // Allow full 16-bit values
+            g_logicoplimit = 0xFFFF;  // Allow full 16-bit values on ~,<<,>>
             int val = solve_number(paras);
             opcode = val; // no extra error chk
             g_logicoplimit = 0xFF;    // Restore normal 8-bit limit
@@ -1528,7 +1528,7 @@ int parse_f_F_address(char* regnumber, bool isf8)
 
 #ifdef LITE_PRINTF
 // Custom listprintf function that supports a limited set of format specifiers
-int listprintf(__in_z __format_string const char * _Format, ...)
+int listprintf(const char * _Format, ...)
 {
     char buffer[256];
     char *buf_ptr = buffer;
@@ -1548,14 +1548,12 @@ int listprintf(__in_z __format_string const char * _Format, ...)
             if (*fmt_ptr == '0') {
                 fmt_ptr++;  // Handle zero-padding
                 if (fmt_ptr[0] >= '1' && fmt_ptr[0] <= '9' && *(fmt_ptr + 1) == 'd') {
-                    // Handle %02d -> 2-digit decimal with zero padding
                     int num = va_arg(args, int);
                     char fmt[5] = "%04d";
                     fmt[2] = fmt_ptr[0];
                     buf_ptr += sprintf(buf_ptr, fmt, num);
                     fmt_ptr += 2;  // Skip '2d'
                 } else if (fmt_ptr[0] >= '1' && fmt_ptr[0] <= '9' && *(fmt_ptr + 1) == 'X') {
-                    // Handle %04X -> 4-digit hexadecimal with zero padding
                     int num = va_arg(args, int);
                     char fmt[5] = "%04X";
                     fmt[2] = fmt_ptr[0];
@@ -1564,16 +1562,14 @@ int listprintf(__in_z __format_string const char * _Format, ...)
                 } else {
                     // Handle unknown format specifier
                     *buf_ptr++ = '%';
-                    *buf_ptr++ = '0';  // Add '0'
+                    *buf_ptr++ = '0';  // Restore '0'
                     *buf_ptr++ = *fmt_ptr;
                 }
             } else if (*fmt_ptr == 'd') {
-                // Handle %d -> decimal integer
                 int num = va_arg(args, int);
                 buf_ptr += sprintf(buf_ptr, "%d", num);
                 fmt_ptr++;  // Skip 'd'
             } else if (fmt_ptr[0] >= '1' && fmt_ptr[0] <= '9' && fmt_ptr[1] == 'd') {
-                // Handle %3d -> decimal integer
                 int num = va_arg(args, int);
                 char fmt[4] = "%3d";
                 fmt[1] = fmt_ptr[0];
@@ -1594,10 +1590,9 @@ int listprintf(__in_z __format_string const char * _Format, ...)
 
                 fmt_ptr++;  // Skip 's'
             } else {
-                // Unknown format specifier, treat as literal
+                // Unsupported format specifier, treat as literal
                 *buf_ptr++ = '%';
-                *buf_ptr++ = *fmt_ptr;
-                fmt_ptr++;
+                *buf_ptr++ = *fmt_ptr++;
             }
         } else {
             // Non-format characters, copy directly to the buffer
@@ -1617,7 +1612,8 @@ int listprintf(__in_z __format_string const char * _Format, ...)
 
 void log_info(const char *info, int code)
 {
-    if (listprintf("## INFO %02d: %s , %04X\n", ++Total_Info, info, code) == -1) {
+    ++Total_Info;
+    if (listprintf("## INFO %02d: %s , %04X\n", Total_Info, info, code) == -1) {
         printf("Can not write note information to list file\n");
         cleanup();
         exit(40);

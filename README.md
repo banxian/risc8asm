@@ -33,7 +33,7 @@ gcc -O3 -DLITE_PRINTF -Wno-multichar -o asm53b asm53b.c
 ### 使用方法
 
 ```bash
-asm53b asmfile [-f]
+asm53b asmfile [options]
 ```
 
 - `asmfile`: 汇编源文件, 如省略后缀名, 会自动添加`.ASM`
