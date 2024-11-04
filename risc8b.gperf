@@ -1,0 +1,124 @@
+%language=ANSI-C
+%readonly-tables
+%compare-lengths
+%struct-type
+
+%define lookup-function-name find_mnemonic
+%define word-array-name mnemonic_table
+
+%enum
+%7bit
+
+%includes
+
+%{
+#include <stdint.h>
+#include "risc8bins.h"
+%}
+
+struct mnemonic_entry {
+    char name[7];
+    uint8_t len;
+    struct opcode_info info;
+};
+
+%%
+NOP,      3, {_OP_NOP,      et_None}
+CLRWDT,   6, {_OP_CLRWDT,   et_None}
+WDT,      3, {_OP_CLRWDT,   et_None}
+SLEEP,    5, {_OP_SLEEP,    et_None}
+HALT,     4, {_OP_SLEEP,    et_None}
+SLEEPX,   6, {_OP_SLEEPX,   et_k2}
+WAITB,    5, {_OP_WAITB,    et_b3}
+WAITRD,   6, {_OP_WAITRD,   et_None}
+WAITWR,   6, {_OP_WAITWR,   et_None}
+WAITSPI,  7, {_OP_WAITWR,   et_None}
+RDCODE,   6, {_OP_RDCODE,   et_None}
+RCODE,    5, {_OP_RCODE,    et_k2}
+WRCODE,   6, {_OP_WRCODE,   et_None}
+EXEC,     4, {_OP_EXEC,     et_k2}
+PUSHAS,   6, {_OP_PUSHAS,   et_None}
+PUSH,     4, {_OP_PUSHAS,   et_None}
+POPAS,    5, {_OP_POPAS,    et_None}
+POP,      3, {_OP_POPAS,    et_None}
+PUSHA2,   6, {_OP_PUSHA2,   et_None}
+POPA2,    5, {_OP_POPA2,    et_None}
+RET,      3, {_OP_RET,      et_None}
+RETURN,   6, {_OP_RET,      et_None}
+RETZ,     4, {_OP_RETZ,     et_None}
+RETOK,    5, {_OP_RETZ,     et_None}
+RETIE,    5, {_OP_RETIE,    et_None}
+RETI,     4, {_OP_RETIE,    et_None}
+CLRA,     4, {_OP_CLRA,     et_None}
+CLR,      3, {_OP_CLR,      et_f8}
+CLRF,     4, {_OP_CLR,      et_f8}
+MOV,      3, {_OP_MOV,      et_F9_d1}
+MOVF,     4, {_OP_MOV,      et_F9_d1}
+MOVA,     4, {_OP_MOVA,     et_F9}
+INC,      3, {_OP_INC,      et_f8_d1}
+INCF,     4, {_OP_INC,      et_f8_d1}
+DEC,      3, {_OP_DEC,      et_f8_d1}
+DECF,     4, {_OP_DEC,      et_f8_d1}
+INCSZ,    5, {_OP_INCSZ,    et_f8_d1}
+INCFSZ,   6, {_OP_INCSZ,    et_f8_d1}
+DECSZ,    5, {_OP_DECSZ,    et_f8_d1}
+DECFSZ,   6, {_OP_DECSZ,    et_f8_d1}
+SWAP,     4, {_OP_SWAP,     et_f8_d1}
+SWAPF,    5, {_OP_SWAP,     et_f8_d1}
+AND,      3, {_OP_AND,      et_f8_d1}
+ANDF,     4, {_OP_AND,      et_f8_d1}
+IOR,      3, {_OP_IOR,      et_f8_d1}
+IORF,     4, {_OP_IOR,      et_f8_d1}
+XOR,      3, {_OP_XOR,      et_f8_d1}
+XORF,     4, {_OP_XOR,      et_f8_d1}
+ADD,      3, {_OP_ADD,      et_f8_d1}
+ADDF,     4, {_OP_ADD,      et_f8_d1}
+SUB,      3, {_OP_SUB,      et_f8_d1}
+SUBF,     4, {_OP_SUB,      et_f8_d1}
+RCL,      3, {_OP_RCL,      et_f8_d1}
+RCLF,     4, {_OP_RCL,      et_f8_d1}
+RLF,      3, {_OP_RCL,      et_f8_d1}
+RCR,      3, {_OP_RCR,      et_f8_d1}
+RCRF,     4, {_OP_RCR,      et_f8_d1}
+RRF,      3, {_OP_RCR,      et_f8_d1}
+RETL,     4, {_OP_RETL,     et_k8}
+DB,       2, {_OP_RETL,     et_k8}
+RETLN,    5, {_OP_RETLN,    et_k8}
+RETER,    5, {_OP_RETLN,    et_k8}
+MOVIP,    5, {_OP_MOVIP,    et_k9}
+MOVIA,    5, {_OP_MOVIA,    et_k10}
+MOVA1F,   6, {_OP_MOVA1F,   et_k8}
+MOVA2F,   6, {_OP_MOVA2F,   et_k8}
+MOVA2P,   6, {_OP_MOVA2P,   et_k8}
+MOVA1P,   6, {_OP_MOVA1P,   et_k8}
+MOVL,     4, {_OP_MOVL,     et_k8}
+ANDL,     4, {_OP_ANDL,     et_k8}
+IORL,     4, {_OP_IORL,     et_k8}
+XORL,     4, {_OP_XORL,     et_k8}
+ADDL,     4, {_OP_ADDL,     et_k8}
+SUBL,     4, {_OP_SUBL,     et_k8}
+CMPLN,    5, {_OP_CMPLN,    et_k8}
+CMPL,     4, {_OP_CMPL,     et_k8}
+BC,       2, {_OP_BC,       et_f8_b3}
+BCF,      3, {_OP_BC,       et_f8_b3}
+BS,       2, {_OP_BS,       et_f8_b3}
+BSF,      3, {_OP_BS,       et_f8_b3}
+BTSC,     4, {_OP_BTSC,     et_f8_b3}
+BTFSC,    5, {_OP_BTSC,     et_f8_b3}
+BTSS,     4, {_OP_BTSS,     et_f8_b3}
+BTFSS,    5, {_OP_BTSS,     et_f8_b3}
+BCTC,     4, {_OP_BCTC,     et_k2}
+BP1F,     4, {_OP_BP1F,     et_a2_b3}
+BP2F,     4, {_OP_BP2F,     et_a2_b3}
+BG1F,     4, {_OP_BG1F,     et_a2_b3}
+BG2F,     4, {_OP_BG2F,     et_a2_b3}
+JMP,      3, {_OP_JMP,      et_k12}
+GOTO,     4, {_OP_JMP,      et_k12}
+CALL,     4, {_OP_CALL,     et_k12}
+JNZ,      3, {_OP_JNZ,      et_k10_pc}
+JZ,       2, {_OP_JZ,       et_k10_pc}
+JNC,      3, {_OP_JNC,      et_k10_pc}
+JC,       2, {_OP_JC,       et_k10_pc}
+CMPZ,     4, {_OP_CMPZ,     et_K7_k8}
+DW,       2, {0,            et_dw}
+%%
