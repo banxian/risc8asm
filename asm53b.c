@@ -149,7 +149,7 @@ int main(int argc, char *argv[])
 #ifdef _MSC_VER
     fullname = (char*)_alloca(fnlen + sizeof("_inc.h"));
     if (outbase) {
-        outbaseext = (char*)_alloca(strlen(outbase) + sizeof("_inc.h"));
+        outbaseext = (char*)_alloca(strlen(outbase) + sizeof("_inc.h")); // may overalloc
     }
 #else
     char fullname[fnlen + sizeof("_inc.h")];
@@ -1315,10 +1315,11 @@ int gen_opcode(char* mnemhead, int addr, int* table)
                 paras = (char*)skip_prefix_spaces(skip_printable_chars(paras));
                 c = *paras;
                 if (c == 0) {
+                    // Store back to source
                     if (instype == et_F9_d1) {
                         log_info("read data without saving", faddr);
-                    } else if (opcode == _OP_ADD && faddr == 2) {
-                        *table = addr + 1; // save range for further check
+                    } else if (opcode == _OP_ADD && faddr == SFR_PRG_COUNT) {
+                        *table = addr + 1; // save PC for next RETL/JMP check, only perform on d is omit
                     }
                     opcode |= faddr | 0x1000; // d
                 } else if (paras[1] > ' ') {

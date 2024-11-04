@@ -97,4 +97,11 @@ enum encoding_type {
     et_dw               // 16bit raw data              DW data
 };
 
+struct opcode_info {
+	uint16_t opcode;
+	uint8_t type;
+};
+
+#define SFR_PRG_COUNT 2
+
 #endif

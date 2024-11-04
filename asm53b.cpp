@@ -10,7 +10,6 @@
 #else
 #include <sys/stat.h>
 #define _mkdir(path) mkdir(path, 0755)
-#define stricmp(s1,s2) strcasecmp(s1,s2)
 #endif
 #include <string>
 #include <vector>
@@ -52,13 +51,13 @@ void save_symbol(char *line, int addr, char type);
 struct label_item_s * find_symbol(const char* symbol);
 int pass1_readlines(FILE *file, const char* srcdir, int addr);
 int pass2_assemble(FILE *file, const char* srcdir, int addr);
-int solve_number(char *str); // will fill parsed number
+int solve_number(char *str, unsigned short logicoplimit = 0xFF); // will fill parsed number
 void cleanup(void);
 void log_info(const char *info, int code);
 void log_warning(const char *warn, int code);
 void log_error(const char *error, int code);
 #ifdef LITE_PRINTF
-int listprintf(__in_z __format_string const char * _Format, ...);
+int __attribute__((format(printf, 1, 2))) listprintf(const char * _Format, ...);
 #else
 #define listprintf(fmt, ...) fprintf(g_listfile, fmt, ##__VA_ARGS__)
 #endif
@@ -73,7 +72,6 @@ int Total_Error = 0;
 int g_readedlinecount = 0;
 int g_nestlevel = 0; // inclusion nest level
 char g_indigi = 0; // indicate a number appeared during solve number
-unsigned g_logicoplimit = 0; // controlled by assemble
 char g_fileline[260]; // raw line from file
 char g_linebuf[260]; // holds pre-filtered line, Uppercased
 uint16_t g_opcodebuf[MAX_ADDR + 1];
@@ -91,7 +89,7 @@ void usage(char* exepath)
     cmdname = cmdname ? cmdname + 1 : exepath;
 #ifdef _WIN32
     if ((ext = strrchr(cmdname, '.'))) {
-        if (stricmp(ext, ".exe") == 0) {
+        if (_stricmp(ext, ".exe") == 0) {
             *ext = 0;
         }
     }
@@ -132,7 +130,6 @@ int main(int argc, char *argv[])
     char* outfname, *lpext;
     bool fullsizebin = false, exportheader = false;
 
-    g_logicoplimit = 0xFF;
     printf(BANNER);
     for (int i = 1; i < argc; i++) {
         const char * argi = argv[i];
@@ -170,7 +167,7 @@ int main(int argc, char *argv[])
         extpos = fnlen + 1;
         fullname.append(".ASM");
     }
-    fullname.reserve(extpos + sizeof("_inc.h"));
+    fullname.reserve(extpos - 1 + sizeof("_inc.h"));
 
     printf("Open source file %s\n", fullname.c_str());
     g_srcfile = fopen(fullname.c_str(), "rt");
@@ -197,6 +194,7 @@ int main(int argc, char *argv[])
             lpext = &outbaseext[outbaseext.size()];
             *lpext++ = '.';
         } else {
+            outbaseext.reserve(extpos - 1 + sizeof("_inc.h"));
             lpext = &outbaseext[extpos];
         }
     } else {
@@ -214,7 +212,7 @@ int main(int argc, char *argv[])
     listprintf(BANNER);
     listprintf("List file: %s\n", outfname);
     time(&now);
-#ifdef _WIN32
+#if defined(_WIN32) & defined(_MSC_VER)
     localtime_s(&tm, &now);
 #else
     localtime_r(&now, &tm);
@@ -411,7 +409,8 @@ const char* skip_printable_chars(const char* str)
 }
 
 /// Parse and evaluate numeric expressions in assembly source
-/// @param str Input uppercase string containing expression (will be wiped)
+/// @param str Input uppercase string containing expression (processed part will be wiped)
+/// @param logicoplimit limitation for current expression's bit-inverse and shift op
 /// @return Evaluated value, or -1 on error
 /// @note Handles:
 /// @note - Decimal/hex/binary/character constants
@@ -420,7 +419,7 @@ const char* skip_printable_chars(const char* str)
 /// @note - Binary operators (+,-,*,/,%,&,|,^,<<,>>)
 /// @note Recursively evaluates complex expressions
 /// @note Modified input string by replacing processed parts with spaces
-int solve_number(char *str)
+int solve_number(char *str, unsigned short logicoplimit)
 {
     unsigned int address;
     char *head;
@@ -516,7 +515,7 @@ int solve_number(char *str)
         *opstr++ = ' ';
     }
     // operator str became operand str
-    operand = solve_number(opstr); // nested
+    operand = solve_number(opstr, logicoplimit); // nested
     g_indigi = 0; // clear flag once recursion parse occupied
     if (operand == -1) {
         return -1;
@@ -532,9 +531,9 @@ int solve_number(char *str)
     case '&' : return address & operand;
     case '|' : return address | operand;
     case '^' : return address ^ operand;
-    case '~' : return g_logicoplimit & ~operand;
-    case '<<': return g_logicoplimit & (address << operand);
-    case '>>': return g_logicoplimit & (address >> operand);
+    case '~' : return logicoplimit & ~operand;
+    case '<<': return logicoplimit & (address << operand);
+    case '>>': return logicoplimit & (address >> operand);
     default  : return address;
     }
 }
@@ -1003,10 +1002,11 @@ int gen_opcode(char* mnemhead, int addr, int* table)
                 paras = (char*)skip_prefix_spaces(skip_printable_chars(paras));
                 c = *paras;
                 if (c == 0) {
+                    // Store back to source
                     if (instype == et_F9_d1) {
                         log_info("read data without saving", faddr);
-                    } else if (opcode == _OP_ADD && faddr == 2) {
-                        *table = addr + 1; // save range for further check
+                    } else if (opcode == _OP_ADD && faddr == SFR_PRG_COUNT) {
+                        *table = addr + 1; // save PC for next RETL/JMP check, only perform on d is omit
                     }
                     opcode |= faddr | 0x1000; // d
                 } else if (paras[1] > ' ') {
@@ -1172,10 +1172,8 @@ int gen_opcode(char* mnemhead, int addr, int* table)
         break;
     case et_dw: // DW data
         {
-            g_logicoplimit = 0xFFFF;  // Allow full 16-bit values
-            int val = solve_number(paras);
+            int val = solve_number(paras, 0xFFFF); // Allow full 16-bit values on ~,<<,>>
             opcode = val; // no extra error chk
-            g_logicoplimit = 0xFF;    // Restore normal 8-bit limit
         }
         paras = (char*)skip_printable_chars(paras);
         break;
@@ -1215,7 +1213,7 @@ int parse_f_F_address(char* regnumber, bool isf8)
 
 #ifdef LITE_PRINTF
 // Custom listprintf function that supports a limited set of format specifiers
-int listprintf(__in_z __format_string const char * _Format, ...)
+int listprintf(const char * _Format, ...)
 {
     char buffer[256];
     char *buf_ptr = buffer;
@@ -1251,7 +1249,7 @@ int listprintf(__in_z __format_string const char * _Format, ...)
                 } else {
                     // Handle unknown format specifier
                     *buf_ptr++ = '%';
-                    *buf_ptr++ = '0';  // Add '%0'
+                    *buf_ptr++ = '0';  // Restore '%0'
                     *buf_ptr++ = *fmt_ptr;
                 }
             } else if (*fmt_ptr == 'd') {
@@ -1281,10 +1279,9 @@ int listprintf(__in_z __format_string const char * _Format, ...)
 
                 fmt_ptr++;  // Skip 's'
             } else {
-                // Unknown format specifier, treat as literal
+                // Unsupported format specifier, treat as literal
                 *buf_ptr++ = '%';
-                *buf_ptr++ = *fmt_ptr;
-                fmt_ptr++;
+                *buf_ptr++ = *fmt_ptr++;
             }
         } else {
             // Non-format characters, copy directly to the buffer
