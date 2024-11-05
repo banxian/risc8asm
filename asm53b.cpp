@@ -140,7 +140,6 @@ int main(int argc, char *argv[])
     int extpos, folderlen;
     int pass1pc, pass2pc;
     time_t now;
-    struct tm tm;
     char* outfname, *lpext;
     bool fullsizebin = false, exportheader = false;
 
@@ -211,12 +210,9 @@ int main(int argc, char *argv[])
     listprintf(BANNER);
     listprintf("List file: %s\n", outfname);
     time(&now);
-#if defined(_WIN32) & defined(_MSC_VER)
-    localtime_s(&tm, &now);
-#else
-    localtime_r(&now, &tm);
-#endif
-    listprintf("Date: %04d.%02d.%02d  Time: %02d:%02d:%02d\n", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+    if (struct tm* tm = localtime(&now)) {
+        listprintf("Date: %04d.%02d.%02d  Time: %02d:%02d:%02d\n", tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec);
+    }
     //atexit(&cleanup);// will invoke after exit or normal return
     memset(g_opcodebuf, 0, sizeof(g_opcodebuf));
     listprintf("\nPass1 -------------------------------------------------------------------------\n");
@@ -334,19 +330,19 @@ bool is_first_label_char(char c) {
 /// @note Detects and handles symbol redefinition
 void save_symbol(char *line, int addr, char type)
 {
-    std::string name;
-    for (int i = 0; i < 27; i++) {
-        if (!is_valid_label_char(line[i])) {
-            name.assign(line, i);
-            for (size_t k = 0; k < i; k++) {
-                line[k] = ' '; // wipe input line element
-            }
-            break;
-        }
+    size_t i = 0;
+    while (i < 27 && is_valid_label_char(line[i])) {
+        ++i;
     }
+    std::string name(line, i);
+    memset(line, ' ', i); // wipe input line element
 
     symbol_map_t::iterator it = g_symbolpool.find(name);
-    if (it != g_symbolpool.end()) {
+    if (it == g_symbolpool.end()) {
+        // setup new symbol
+        label_item_s item = { addr, (char)(addr == -1 ? ssUndefined : ssUnsed), type };
+        g_symbolpool[name] = item;
+    } else {
         // alternative found symbol
         if (it->second.address != addr) {
             it->second.address = addr;
@@ -355,11 +351,7 @@ void save_symbol(char *line, int addr, char type)
             log_warning("label redefined", addr);
         }
         it->second.status = ssRedefined;
-        return;
     }
-    // setup new symbol
-    label_item_s item = {addr, (char)(addr == -1 ? ssUndefined : ssUnsed), type};
-    g_symbolpool[name] = item;
 }
 
 /// Find a symbol in the global symbol table using binary search
@@ -368,14 +360,11 @@ void save_symbol(char *line, int addr, char type)
 /// @note Symbol names in table was padded with spaces
 struct label_item_s * find_symbol(const char* symbol)
 {
-    std::string name;
-    // strip symbol name
-    for (int i = 0; i < 27; i++) {
-        if (false == is_valid_label_char(symbol[i])) {
-            name.assign(symbol, i);
-            break;
-        }
+    size_t i = 0;
+    while (i < 27 && is_valid_label_char(symbol[i])) {
+        ++i;
     }
+    std::string name(symbol, i); // strip symbol name
 
     symbol_map_t::iterator it = g_symbolpool.find(name);
     return it != g_symbolpool.end() ? &it->second : NULL;
@@ -484,10 +473,8 @@ int solve_number(char *str, unsigned short logicoplimit)
         }
         address = curr->address;
         // fill space until meet non label chars
-        for (char c9 = *head; c9; c9 = *++head) {
-            if (!is_valid_label_char(c9))
-                break;
-            *head = ' ';
+        while (*head && is_valid_label_char(*head)) {
+            *head++ = ' ';
         }
     } else if (c0 == '-' || c0 == '~') {
         address = 0; // for unary operator -

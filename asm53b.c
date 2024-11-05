@@ -240,7 +240,7 @@ int main(int argc, char *argv[])
         fullname[slashpos] = 0; // fullname became folder path
     }
 
-    pass1pc = pass1_readlines(g_srcfile, slashpos?fullname:NULL, 0); // solve labels, equ, org
+    pass1pc = pass1_readlines(g_srcfile, slashpos?fullname:NULL, 0); // solve labels, EQU, ORG
     g_readedlinecount = 0;
     g_fileline[0] = 0;
     if (pass1pc != -1 && Total_Error < 100) {
@@ -356,7 +356,7 @@ int binary_search(const char *name) {
 
     while (left <= right) {
         int mid = (left + right) >> 1;
-        int cmp = strncmp(g_symbolpool[mid].name, name, 28);
+        int cmp = memcmp(g_symbolpool[mid].name, name, 28); // memcmp may faster than strncmp
         if (cmp == 0) return mid;
         if (cmp < 0) left = mid + 1;
         else right = mid - 1;
@@ -552,10 +552,8 @@ int solve_number(char *str)
         }
         address = curr->address;
         // fill space until meet non label chars
-        for (char c9 = *head; c9; c9 = *++head) {
-            if (!is_valid_label_char(c9))
-                break;
-            *head = ' ';
+        while (*head && is_valid_label_char(*head)) {
+            *head++ = ' ';
         }
     } else if (c0 == '-' || c0 == '~') {
         address = 0; // for unary operator -
