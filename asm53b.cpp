@@ -524,15 +524,6 @@ int solve_number(char *str, unsigned short logicoplimit)
     }
 }
 
-// used for debug
-/*int solve_number(char *str)
-{
-    printf("[%s] -> ", str);
-    int num = solve_number2(str);
-    printf("[%s] = %d\n", str, num);
-    return num;
-}*/
-
 /// Pre-process a source line for pass1/pass2
 /// @return Length of processed line
 /// @note Performs:
@@ -616,6 +607,21 @@ void process_inclusion(char* head, int* addr, const char* srcdir, pass_func nest
     }
 }
 
+bool is_end_directive(const char* head)
+{
+    return head[0] == 'E' && head[1] == 'N' && head[2] == 'D' && head[3] <= ' ';
+}
+
+bool is_org_directive(const char* head)
+{
+    return head[0] == 'O' && head[1] == 'R' && head[2] == 'G' && is_tab_or_space(head[3]);
+}
+
+bool is_include_directive(const char* head)
+{
+    return *(uint32_t*)head == 'LCNI' && *(uint16_t*)&head[4] == 'DU' && head[6] == 'E' && is_tab_or_space(head[7]);
+}
+
 /// Perform first pass of assembly to collect all symbols
 /// @param file Source file handle
 /// @param srcdir Source file directory path for resolving includes
@@ -640,13 +646,13 @@ int pass1_readlines(FILE *file, const char* srcdir, int addr)
             continue;
         }
         // END, ORG, INCLUDE
-        if (head[0] == 'E' && head[1] == 'N' && head[2] == 'D' && head[3] <= ' ') {
+        if (is_end_directive(head)) {
             if (g_nestlevel) {
                 log_warning("END in include file", g_readedlinecount);
             }
             g_readedlinecount++;
             break;
-        } else if (head[0] == 'O' && head[1] == 'R' && head[2] == 'G' && is_tab_or_space(head[3])) {
+        } else if (is_org_directive(head)) {
             int orgaddr = solve_number(&head[3]);
             if (orgaddr > 0xFFF) {
                 log_error("invalid ORG address", orgaddr);
@@ -657,7 +663,7 @@ int pass1_readlines(FILE *file, const char* srcdir, int addr)
                 addr = orgaddr;
             }
             continue;
-        } else if (*(uint32_t*)head == 'LCNI' && *(uint16_t*)&head[4] == 'DU' && head[6] == 'E' && is_tab_or_space(head[7])) {
+        } else if (is_include_directive(head)) {
             listprintf("%s\n", g_linebuf);
             process_inclusion(head, &addr, srcdir, &pass1_readlines);
             continue;
@@ -728,14 +734,14 @@ int pass2_assemble(FILE *file, const char* srcdir, int addr)
             continue;
         }
         // END, ORG, INCLUDE
-        if (head[0] == 'E' && head[1] == 'N' && head[2] == 'D' && head[3] <= ' ') {
+        if (is_end_directive(head)) {
             if (g_nestlevel) {
                 log_warning("END in include file", g_readedlinecount);
             }
             listprintf("L=%04d, P=%04X, .END.. : %s\n", g_readedlinecount, addr, g_fileline);
             g_readedlinecount++;
             break;
-        } else if (head[0] == 'O' && head[1] == 'R' && head[2] == 'G' && is_tab_or_space(head[3])) {
+        } else if (is_org_directive(head)) {
             int orgaddr = solve_number(&head[3]);
             if (orgaddr > 0xFFF) {
                 log_error("invalid ORG address", orgaddr);
@@ -747,7 +753,7 @@ int pass2_assemble(FILE *file, const char* srcdir, int addr)
             }
             listprintf("L=%04d, P=%04X, ...... : %s\n", g_readedlinecount, addr, g_fileline); // type 1
             continue;
-        } else if (*(uint32_t*)head == 'LCNI' && *(uint16_t*)&head[4] == 'DU' && head[6] == 'E' && is_tab_or_space(head[7])) {
+        } else if (is_include_directive(head)) {
             listprintf("L=%04d, NEST_INCLUDE=%d : %s\n", g_readedlinecount, g_nestlevel + 1, g_fileline); // type 2
             process_inclusion(head, &addr, srcdir, &pass2_assemble);
             continue;
